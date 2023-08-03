@@ -14,6 +14,10 @@ Key Features:
 - Compatible with multiple languages OS for notifications
 - Choose the display monitor for notifications.
 
+![150003](https://github.com/N3ars/NotificationPositioner/assets/41067116/d0a83b8b-c972-4ddc-8350-1ea725797724)
+
+
+
 # Key Components
 
 # PositionForm Class
@@ -59,7 +63,7 @@ The main method handles the application's initialization, UI setup, and event ha
 
 To use the application, simply run the executable. The application will appear as a tray icon. Right-click the tray icon to access the context menu where you can adjust the position of notifications and enable/disable launching on Windows startup.
 
-- Download the latest release from [here]()
+- Download the latest release from [here](https://github.com/N3ars/NotificationPositioner/releases/download/1.0/NotificationPositionerv1.exe)
 
 # Compiling
 
