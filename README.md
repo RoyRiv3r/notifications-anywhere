@@ -1,6 +1,4 @@
-# Notification Positioner
-
-Overview
+# Overview
 
 This program is a Windows application that allows the user to control the position of desktop notifications. Users can customize the location of notifications by adjusting the X and Y sliders in the application. The program also has the option to launch on Windows startup.
 
