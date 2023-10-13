@@ -21,19 +21,27 @@ public class Program
         public ComboBox MonitorSelector { get; private set; }
         private void OnDisplaySettingsChanged(object sender, EventArgs e)
         {
-
             XSlider.Maximum = Screen.PrimaryScreen.Bounds.Width;
             YSlider.Maximum = Screen.PrimaryScreen.Bounds.Height;
 
-            XSlider.Value = 0;
-            YSlider.Value = 0;
+
+            int savedIndex = MonitorSelector.SelectedIndex;
 
             MonitorSelector.Items.Clear();
             for (int i = 0; i < Screen.AllScreens.Length; i++)
             {
                 MonitorSelector.Items.Add(String.Format("Monitor {0}", i + 1));
             }
-            MonitorSelector.SelectedIndex = 0;
+
+
+            if (savedIndex < MonitorSelector.Items.Count)
+            {
+                MonitorSelector.SelectedIndex = savedIndex;
+            }
+            else
+            {
+                MonitorSelector.SelectedIndex = 0;
+            }
 
             ProgramUtilities.SavePosition(
                 XSlider.Value,
@@ -365,8 +373,7 @@ public class ProgramUtilities
         int xOffset,
         int yOffset,
         out int xPos,
-        out int yPos
-    )
+        out int yPos)
     {
         xPos = 0;
         yPos = 0;
@@ -375,15 +382,21 @@ public class ProgramUtilities
         if (monitorIndex >= 0 && monitorIndex < screens.Length)
         {
             Rectangle monitorBounds = screens[monitorIndex].Bounds;
-
             Rectangle notifyRect = new Rectangle();
             IntPtr hwnd = NativeMethods.FindWindow("Windows.UI.Core.CoreWindow", notificationTitle);
             NativeMethods.GetWindowRect(hwnd, ref notifyRect);
             notifyRect.Width = notifyRect.Width - notifyRect.X;
             notifyRect.Height = notifyRect.Height - notifyRect.Y;
 
-            xPos = monitorBounds.Left + monitorBounds.Width - notifyRect.Width - xOffset;
-            yPos = monitorBounds.Top + monitorBounds.Height - notifyRect.Height - yOffset - 100;
+            xPos = xOffset;
+            yPos = yOffset;
+        }
+
+        Point currentPosition = new Point(xPos, yPos);
+
+        if (currentPosition != lastPosition)
+        {
+            lastPosition = currentPosition;
         }
     }
     public static void ShowTestNotification()
