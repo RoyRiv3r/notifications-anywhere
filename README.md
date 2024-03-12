@@ -1,67 +1,38 @@
-# Overview
+# Notification Anywhere
 
-This program is a Windows application that allows the user to control the position of desktop notifications. Users can customize the location of notifications by adjusting the X and Y sliders in the application. The program also has the option to launch on Windows startup.
+## Overview
+
+**Notification Anywhere** is a lightweight Windows application that allows you to customize the position of Windows notifications. It gives you the ability to:
+
+- **Position notifications on any monitor:** Choose the specific monitor where you want notifications to appear.
+- **Fine-tune the position:** Adjust the horizontal and vertical offset of notifications using sliders.
+- **Reset to default:** Easily reset the notification position to the default bottom-right corner.
+- **Test notifications:** Send a test notification to see the positioning in action.
+- **Launch on startup:** Optionally configure the application to launch automatically when Windows starts.
 
 Tested on Windows 11 Build 22621 & Windows 10 Build 19043
 
-Key Features:
 
-- Customizable position of desktop notifications
-- Option to launch on Windows startup
-- Test notification button to check the current position settings
-- Compatible with multiple languages OS for notifications
-- Choose the display monitor for notifications.
+## Why use Notification Anywhere?
 
-![150003](https://github.com/N3ars/NotificationPositioner/assets/41067116/d0a83b8b-c972-4ddc-8350-1ea725797724)
+- **Improved workflow:** Place notifications where they are most convenient for you, reducing distractions and improving productivity.
+- **Multi-monitor setups:** Ideal for users with multiple monitors, allowing you to direct notifications to the screen you're currently using.
+- **Customization:** Fine-tune the exact position of notifications to match your preferences.
 
+## How it works
 
+Notification Anywhere runs in the background and monitors for new Windows notifications. When a notification appears, it automatically repositions it based on your configured settings.
 
-# Key Components
+## Screenshots
 
-# PositionForm Class
+![image](https://github.com/RoyRiv3r/notifications-anywhere/assets/41067116/317ba268-c553-4788-90c4-92ec68f34745)
 
-This class represents the main form of the application. It contains UI components for adjusting the notification position and monitor selection, as well as event handlers for user interactions.
+## Installation and Usage
 
-UI Components:
-
-- XSlider: Horizontal slider for adjusting the X-axis position of notifications.
-- YSlider: Vertical slider for adjusting the Y-axis position of notifications.
-- MonitorSelector: ComboBox for selecting the display monitor for notifications.
-- TestNotificationButton: Button for triggering a test notification.
-- ResetButton: Button for resetting the notification position and monitor selection to their default values.
-
-Event Handlers:
-
-- OnDisplaySettingsChanged: Updates the sliders and monitor selector when the display settings change.
-- FormClosing: Prevents the form from closing and hides it instead.
-- ResetButton.Click: Resets the notification position and monitor selection to their default values.
-
-NativeMethods Class
-
-This class contains the P/Invoke declarations for interacting with native Windows API functions.
-ProgramUtilities Class
-
-This class contains utility methods for the application, including:
-
-- GetNotificationTitle: Retrieves the notification title based on the current system language.
-- LoadIconFromBase64String: Loads an application icon from a base64-encoded string.
-- SetStartup: Enables or disables the application to launch on Windows startup.
-- IsStartupEnabled: Checks if the application is set to launch on Windows startup.
-- SavePosition: Saves the notification position and monitor selection settings.
-- LoadPosition: Loads the saved notification position and monitor selection settings.
-- IsLanguageSupported: Checks if the current system language is supported by the application.
-- PositionNotification: Positions the notification on the specified monitor.
-- ShowTestNotification: Displays a test notification.
-
-# Main Method
-
-The main method handles the application's initialization, UI setup, and event handling. It ensures that only a single instance of the application is running at a time. It also sets up a background worker to monitor for new notifications and position them according to the user's settings.
-
-# Usage
-
-To use the application, simply run the executable. The application will appear as a tray icon. Right-click the tray icon to access the context menu where you can adjust the position of notifications and enable/disable launching on Windows startup.
-
-- Download the latest release from [here](https://github.com/N3ars/NotificationPositioner/releases/download/1.0/NotificationPositionerv1.exe)
+1. Download the latest release from the [Releases](https://github.com/RoyRiv3r/notifications-anywhere/releases/tag/1.1) page. 
+2. Extract the downloaded ZIP file.
+3. Run the `NotificationAnywhere.exe` executable.
+4. Use the tray icon to access the settings and position the notifications.
 
 # Compiling
 
@@ -78,3 +49,8 @@ If you encounter a problem such as being detected as a virus, make sure to add i
 # Credit
 
 This code is based on https://github.com/SamarthCat/notifications-at-top
+
+## License
+
+This project is licensed under the [MIT License]().
+
