@@ -48,7 +48,9 @@ If you encounter a problem such as being detected as a virus, make sure to add i
 
 # Credit
 
-This code is based on https://github.com/SamarthCat/notifications-at-top
+https://github.com/SamsidParty/TopNotify
+
+~~https://github.com/SamarthCat/notifications-at-top~~
 
 ## License
 
