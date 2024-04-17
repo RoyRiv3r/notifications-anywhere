@@ -272,6 +272,14 @@ public class ProgramUtilities
                 return "Ny meddelelse";
             case "no":
                 return "Ny melding";
+            case "ru":
+                return "Новое уведомление";
+            case "ar":
+                return "إشعار جديد";
+            case "hi":
+                return "नई सूचना";
+            case "ko":
+                return "새로운 알림";
             default:
                 return null;
         }
@@ -361,6 +369,10 @@ public class ProgramUtilities
             case "sv":
             case "da":
             case "no":
+            case "ru":
+            case "ar":
+            case "hi":
+            case "ko":
                 return true;
             default:
                 return false;
