@@ -19,6 +19,37 @@ public class Program
         public TrackBar YSlider { get; private set; }
         public Button TestNotificationButton { get; private set; }
         public ComboBox MonitorSelector { get; private set; }
+
+        public TrackBar OpacitySlider { get; private set; }
+        public IntPtr notificationWindowHandle = IntPtr.Zero;
+
+        public CheckBox ClickThroughCheckBox { get; private set; }
+
+        public void SetClickThrough(IntPtr hwnd, bool enabled)
+        {
+            const int GWL_EXSTYLE = -20;
+            const int WS_EX_TRANSPARENT = 0x20;
+
+            int extendedStyle = NativeMethods.GetWindowLong(hwnd, GWL_EXSTYLE);
+            if (enabled)
+            {
+                extendedStyle |= WS_EX_TRANSPARENT;
+            }
+            else
+            {
+                extendedStyle &= ~WS_EX_TRANSPARENT;
+            }
+            NativeMethods.SetWindowLong(hwnd, GWL_EXSTYLE, extendedStyle);
+        }
+
+        public void ResetNotificationWindowOpacity()
+        {
+            if (notificationWindowHandle != IntPtr.Zero)
+                {
+                    WindowOpacity.ApplyToWindow(notificationWindowHandle, 255); 
+                }
+        }
+
         private void OnDisplaySettingsChanged(object sender, EventArgs e) 
         {
             int maxWidth = 0;
@@ -57,6 +88,13 @@ public class Program
             }
             ProgramUtilities.SavePosition( XSlider.Value, YSlider.Value, MonitorSelector.SelectedIndex );
         }
+        private void PositionForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (notificationWindowHandle != IntPtr.Zero)
+            {
+                SetClickThrough(notificationWindowHandle, false);
+            }
+        }
 
         protected override void Dispose(bool disposing)
         {
@@ -69,13 +107,29 @@ public class Program
         public PositionForm()
         {
             this.Text = "Notification Anywhere";
+            this.Size = new Size(300, 400);
             this.MaximizeBox = false;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.ShowIcon = false;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.MinimizeBox = false;
             this.TopMost = true;
-
+            Label opacitySliderLabel = new Label
+            {
+                Text = "Opacity",
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock = DockStyle.Top
+            };
+            OpacitySlider = new TrackBar
+            {
+                Minimum = 0,
+                Maximum = 100,
+                Value = 100, 
+                TickStyle = TickStyle.None,
+                Dock = DockStyle.Top
+            };
+            int savedOpacity = ProgramUtilities.LoadOpacity();
+            OpacitySlider.Value = savedOpacity;
             Label xSliderLabel = new Label
             {
                 Text = "LEFT/RIGHT",
@@ -90,7 +144,7 @@ public class Program
                 Dock = DockStyle.Top
             };
 
-            Label separator1 = new Label { Dock = DockStyle.Top, Height = 10 };
+            Label separator1 = new Label { Dock = DockStyle.Top, Height = 5 };
 
             Label ySliderLabel = new Label
             {
@@ -127,7 +181,6 @@ public class Program
                 Dock = DockStyle.Top
             };
 
-
             for (int i = 0; i < Screen.AllScreens.Length; i++) 
             {
                 MonitorSelector.Items.Add(String.Format("Monitor {0}", i + 1));
@@ -142,21 +195,41 @@ public class Program
                     YSlider.Maximum = selectedScreen.Bounds.Height;
                 }
             };
-            ResetButton = new Button { Text = "Reset Position", Dock = DockStyle.Top };
+            ClickThroughCheckBox = new CheckBox
+            {
+                Text = "Enable Click Through Notification",
+                Dock = DockStyle.Top,
+                Checked = false 
+            };
+            
+            ResetButton = new Button { Text = "RESET", Dock = DockStyle.Top };
 
-            Label separator4 = new Label { Dock = DockStyle.Top, Height = 10 };
+            Label separator4 = new Label { Dock = DockStyle.Top, Height = 5 };
+
+            Label separator5 = new Label { Dock = DockStyle.Top, Height = 5 };
+
             MonitorSelector.SelectedIndex = 0;
             SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
-            Controls.Add(MonitorSelector);
-            Controls.Add(monitorSelectorLabel);
-            Controls.Add(separator3);
             Controls.Add(TestNotificationButton);
             Controls.Add(separator2);
+            Controls.Add(MonitorSelector);
+            Controls.Add(monitorSelectorLabel);
+
+
+            Controls.Add(ClickThroughCheckBox);
+            Controls.Add(separator5); 
+            Controls.Add(OpacitySlider);      
+            Controls.Add(opacitySliderLabel);
+
+            Controls.Add(separator3);
+
             Controls.Add(YSlider);
             Controls.Add(ySliderLabel);
             Controls.Add(separator1);
+
             Controls.Add(XSlider);
             Controls.Add(xSliderLabel);
+
             Controls.Add(ResetButton); 
             Controls.Add(separator4); 
             this.FormClosing += (sender, e) =>
@@ -167,18 +240,38 @@ public class Program
             ResetButton.Click += (sender, e) =>
             {
                 Screen selectedScreen = Screen.AllScreens[MonitorSelector.SelectedIndex];
-
                 Rectangle monitorBounds = selectedScreen.Bounds;
 
-                XSlider.Value = monitorBounds.Width - 300; 
-                YSlider.Value = monitorBounds.Height - 200; 
+                XSlider.Value = monitorBounds.Width;
+                YSlider.Value = monitorBounds.Height - 50;
+                OpacitySlider.Value = 100; 
+                
+                ClickThroughCheckBox.Checked = false;
+                ProgramUtilities.SaveClickThroughState(ClickThroughCheckBox.Checked);
 
-                ProgramUtilities.SavePosition(
-                    XSlider.Value,
-                    YSlider.Value,
-                    MonitorSelector.SelectedIndex
-                );
+                ProgramUtilities.SavePosition(XSlider.Value, YSlider.Value, MonitorSelector.SelectedIndex);
+                ProgramUtilities.SaveOpacity(OpacitySlider.Value);
             };
+            OpacitySlider.ValueChanged += (sender, e) =>
+            {
+                if (notificationWindowHandle != IntPtr.Zero)
+                {
+                    WindowOpacity.ApplyToWindow(notificationWindowHandle, (byte)(OpacitySlider.Value * 2.55));
+                }
+            };
+            ClickThroughCheckBox.Checked = ProgramUtilities.LoadClickThroughState();
+            
+            ClickThroughCheckBox.CheckedChanged += (sender, e) =>
+            {
+                if (notificationWindowHandle != IntPtr.Zero)
+                {
+                    SetClickThrough(notificationWindowHandle, ClickThroughCheckBox.Checked);
+                }
+                ProgramUtilities.SaveClickThroughState(ClickThroughCheckBox.Checked);
+            };
+
+            this.FormClosing += PositionForm_FormClosing;
+
         }
     }
 }
@@ -187,8 +280,37 @@ public class Program
 
     #region NativeMethods Class
 
+public class WindowOpacity
+{
+    [DllImport("user32.dll")]
+    static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll")]
+    static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+    public const int GWL_EXSTYLE = -20;
+    public const int WS_EX_LAYERED = 0x80000;
+    public const int LWA_ALPHA = 0x2;
+
+    public static void ApplyToWindow(IntPtr hwnd, byte opacity)
+    {
+        SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+        SetLayeredWindowAttributes(hwnd, 0, opacity, LWA_ALPHA);
+    }
+}
+
+
 public class NativeMethods
 {
+    [DllImport("user32.dll")]
+    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
 
     public const int SWP_NOSIZE = 0x0001;
     public const int SWP_NOZORDER = 0x0004;
@@ -283,6 +405,47 @@ public class ProgramUtilities
             default:
                 return null;
         }
+    }
+
+    public static void SaveClickThroughState(bool enabled)
+    {
+        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\NotificationAnywhere"))
+        {
+            key.SetValue("ClickThroughEnabled", enabled ? 1 : 0);
+        }
+    }
+
+    public static bool LoadClickThroughState()
+    {
+        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\NotificationAnywhere"))
+        {
+            if (key != null)
+            {
+                object value = key.GetValue("ClickThroughEnabled");
+                return value != null && (int)value != 0;
+            }
+            return false;  
+        }
+    }
+
+    public static void SaveOpacity(int value)
+    {
+        RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\NotificationAnywhere");
+        key.SetValue("Opacity", value);
+        key.Close();
+    }
+
+    public static int LoadOpacity()
+    {
+        RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\NotificationAnywhere");
+        if (key == null)
+        {
+            return 100; 
+        }
+
+        int opacity = (int)key.GetValue("Opacity", 100);
+        key.Close();
+        return opacity;
     }
 
     public static Icon LoadIconFromBase64String(string base64String)
@@ -400,7 +563,8 @@ public class ProgramUtilities
             NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_SHOWWINDOW
         );
     }
-    private static void GetPositionForMonitor(
+
+    public static void GetPositionForMonitor(
         string notificationTitle,
         int monitorIndex,
         int xOffset,
@@ -422,8 +586,32 @@ public class ProgramUtilities
                 NativeMethods.GetWindowRect(hwnd, out rect);
                 Size notificationSize = new Size(rect.Right - rect.Left, rect.Bottom - rect.Top);
 
-                xPos = Math.Min(monitorBounds.Left + xOffset, monitorBounds.Right - notificationSize.Width);
-                yPos = Math.Min(monitorBounds.Top + yOffset, monitorBounds.Bottom - notificationSize.Height);
+                bool anchorBottom = true; 
+                bool anchorRight = true;
+
+                xPos = anchorRight ? monitorBounds.Right - (monitorBounds.Width - xOffset) - notificationSize.Width : monitorBounds.Left + (monitorBounds.Width - xOffset);
+                yPos = anchorBottom ? monitorBounds.Bottom - (monitorBounds.Height - yOffset) - notificationSize.Height : monitorBounds.Top + yOffset;
+
+                if (anchorRight && xPos < monitorBounds.Left)
+                {
+                    xPos = monitorBounds.Left;
+                    anchorRight = false;
+                }
+
+                if (yPos < monitorBounds.Top) 
+                {
+                    yPos = monitorBounds.Top; 
+                } 
+                else if (yPos + notificationSize.Height > monitorBounds.Bottom) 
+                {
+                    anchorBottom = false; 
+                    yPos = monitorBounds.Top + yOffset; 
+
+                    if (yPos + notificationSize.Height > monitorBounds.Bottom) 
+                    {
+                        yPos = monitorBounds.Top + (monitorBounds.Height - notificationSize.Height) / 2; 
+                    }
+                }
             }
         }
     }
@@ -476,7 +664,6 @@ public class ProgramUtilities
             NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_SHOWWINDOW
         );
     }
-
 
     #endregion
 
@@ -586,18 +773,15 @@ public class ProgramUtilities
                 };
 
                 CancellationTokenSource cts = new CancellationTokenSource();
-
                 contextMenu.Items.Add(positionNotificationMenuItem);
                 contextMenu.Items.Add(exitMenuItem);
-
                 contextMenu.Items.Add(launchOnStartupMenuItem);
                 contextMenu.Items.Add(exitMenuItem);
                 trayIcon.ContextMenuStrip = contextMenu;
-
                 BackgroundWorker bgWorker = new BackgroundWorker();
                 bgWorker.WorkerReportsProgress = true;
                 bgWorker.WorkerSupportsCancellation = true;
-
+                object lockObject = new object();
                 positionForm.MonitorSelector.SelectedIndexChanged += (sender, e) => {
                     ProgramUtilities.SavePosition(
                         positionForm.XSlider.Value,
@@ -609,6 +793,9 @@ public class ProgramUtilities
 
                 bgWorker.ProgressChanged += (sender, e) => {
                     IntPtr hwnd = NativeMethods.FindWindow("Windows.UI.Core.CoreWindow", notificationTitle);
+                    lock (lockObject) {
+                        hwnd = positionForm.notificationWindowHandle;
+                    }
                     if (hwnd != IntPtr.Zero) {
                         int monitorIndex = positionForm.MonitorSelector.SelectedIndex;
                         int xOffset = positionForm.XSlider.Value;
@@ -622,6 +809,8 @@ public class ProgramUtilities
                             out xPos,
                             out yPos
                         );
+
+                        NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
                         NativeMethods.SetWindowPos(
                             hwnd,
                             0,
@@ -631,9 +820,9 @@ public class ProgramUtilities
                             0,
                             NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER
                         );
+                        NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
                     }
                 };
-
 
                 bgWorker.DoWork += (sender, e) =>
                 {
@@ -648,6 +837,10 @@ public class ProgramUtilities
 
                         if (hwnd != IntPtr.Zero)
                         {
+                            lock (lockObject) {
+                            positionForm.notificationWindowHandle = hwnd;
+                            positionForm.SetClickThrough(hwnd, positionForm.ClickThroughCheckBox.Checked);
+                            }
                             int monitorIndex = positionForm.MonitorSelector.SelectedIndex;
                             int xOffset = positionForm.XSlider.Value;
                             int yOffset = positionForm.YSlider.Value;
@@ -680,18 +873,32 @@ public class ProgramUtilities
                                     0,
                                     NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER
                                 );
+                                WindowOpacity.ApplyToWindow(hwnd, (byte)(positionForm.OpacitySlider.Value * 2.55));
                                 NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
                             }
+                        } else {
+                            positionForm.notificationWindowHandle = IntPtr.Zero;
+                            positionForm.SetClickThrough(IntPtr.Zero, false);
                         }
 
-                        Thread.Sleep(10);
+                        token.WaitHandle.WaitOne(1);
                     }
+                };
+                positionForm.OpacitySlider.ValueChanged += (sender, e) =>
+                {
+                    if (positionForm.notificationWindowHandle != IntPtr.Zero)
+                    {
+                        WindowOpacity.ApplyToWindow(positionForm.notificationWindowHandle, (byte)(positionForm.OpacitySlider.Value * 2.55));
+                    }
+
+                    ProgramUtilities.SaveOpacity(positionForm.OpacitySlider.Value);
                 };
 
                 exitMenuItem.Click += (sender, e) =>
                 {
                     trayIcon.Visible = false;
                     cts.Cancel();
+                    positionForm.ResetNotificationWindowOpacity(); 
                     Application.Exit();
                     Environment.Exit(0);
                 };
