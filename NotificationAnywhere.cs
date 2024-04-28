@@ -7,7 +7,9 @@ using System.Globalization;
 using System.ComponentModel;
 using Microsoft.Win32;
 using System.IO;
-
+using System.Text;
+using System.Linq;
+using System.Collections.Generic;
 public class Program
 {
     #region PositionForm Class
@@ -20,16 +22,23 @@ public class Program
         public ComboBox MonitorSelector { get; private set; }
         public TrackBar OpacitySlider { get; private set; }
         public IntPtr notificationWindowHandle = IntPtr.Zero;
+        public IntPtr teamsNotificationWindowHandle = IntPtr.Zero;
         public CheckBox ClickThroughCheckBox { get; private set; }
+        public const string notificationWindowClassName = "TeamsWebView";
+        public const string notificationWindowCaption = "Microsoft Teams";
+        public BackgroundWorker monitorWorker;
+        public object lockObject = new object();
+        public TrackBar horizontalSlider;
+        public TrackBar verticalSlider;
+        private List<IntPtr> notificationWindowHandles = new List<IntPtr>();
 
         public void SetClickThrough(IntPtr hwnd, bool enabled)
         {
-            const int GWL_EXSTYLE = -20;
-            const int WS_EX_TRANSPARENT = 0x20;
 
-            int extendedStyle = NativeMethods.GetWindowLong(hwnd, GWL_EXSTYLE);
-            extendedStyle = enabled ? extendedStyle | WS_EX_TRANSPARENT : extendedStyle & ~WS_EX_TRANSPARENT;
-            NativeMethods.SetWindowLong(hwnd, GWL_EXSTYLE, extendedStyle);
+
+            int extendedStyle = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE);
+            extendedStyle = enabled ? extendedStyle | NativeMethods.WS_EX_TRANSPARENT : extendedStyle & ~NativeMethods.WS_EX_TRANSPARENT;
+            NativeMethods.SetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE, extendedStyle);
         }
 
         public void ResetNotificationWindowOpacity()
@@ -38,69 +47,118 @@ public class Program
                 NativeMethods.ApplyToWindow(notificationWindowHandle, 255);
         }
 
-        private void OnDisplaySettingsChanged(object sender, EventArgs e)
+        private void MonitorWorker_DoWork(object sender, DoWorkEventArgs e)
         {
-            int maxWidth = 0, maxHeight = 0;
-
-            foreach (Screen screen in Screen.AllScreens)
+            while (true)
             {
-                maxWidth = Math.Max(maxWidth, screen.Bounds.Width);
-                maxHeight = Math.Max(maxHeight, screen.Bounds.Height);
-            }
+                notificationWindowHandles.Clear();
+                NativeMethods.EnumWindows((hwnd, param) =>
+                {
+                    StringBuilder className = new StringBuilder(256);
+                    NativeMethods.GetClassName(hwnd, className, className.Capacity);
+                    if (className.ToString() == notificationWindowClassName)
+                    {
+                        NativeMethods.RECT rect;
+                        NativeMethods.GetWindowRect(hwnd, out rect);
+                        int width = rect.Right - rect.Left;
+                        int height = rect.Bottom - rect.Top;
+                        int[] validHeights = { 176, 252, 424, 444, 404, 520, 652, 692, 136, 272 };
+                        if (width == 372 && validHeights.Contains(height))
+                        {
+                            notificationWindowHandles.Add(hwnd);
+                        }
+                    }
+                    return true; // Continue enumerating
+                }, IntPtr.Zero);
 
+                monitorWorker.ReportProgress(0, notificationWindowHandles.ToArray());
+                System.Threading.Thread.Sleep(1);
+            }
+        }
+
+        private void MonitorWorker_ProgressChanged(object sender, ProgressChangedEventArgs e)
+        {
+            IntPtr[] notificationWindowHandles = (IntPtr[])e.UserState;
+            lock (lockObject)
+            {
+                int horizontalValue, verticalValue;
+                ProgramUtilities.LoadTeamsPosition(out horizontalValue, out verticalValue);
+
+                Screen selectedScreen = Screen.AllScreens[MonitorSelector.SelectedIndex];
+                Rectangle monitorBounds = selectedScreen.Bounds;
+
+                horizontalValue = Math.Max(Math.Min(horizontalValue, monitorBounds.Right), monitorBounds.Left);
+
+                int currentVerticalPosition = verticalValue;
+
+                foreach (IntPtr hwnd in notificationWindowHandles)
+                {
+                    NativeMethods.RECT rect;
+                    NativeMethods.GetWindowRect(hwnd, out rect);
+                    int windowHeight = rect.Bottom - rect.Top;
+
+                    verticalValue = Math.Max(Math.Min(currentVerticalPosition, monitorBounds.Bottom - windowHeight), monitorBounds.Top);
+
+                    NativeMethods.SetWindowPos(hwnd, (IntPtr)NativeMethods.HWND_TOPMOST, horizontalValue, verticalValue, 0, 0, NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOSIZE);
+
+                    currentVerticalPosition += windowHeight; 
+                }
+            }
+        }
+
+        private void UpdateNotificationPosition(int x, int y)
+        {
+            Screen selectedScreen = Screen.AllScreens[MonitorSelector.SelectedIndex];
+            Rectangle screenBounds = selectedScreen.Bounds;
+
+            NativeMethods.RECT windowRect;
+            NativeMethods.GetWindowRect(teamsNotificationWindowHandle, out windowRect); 
+            int windowWidth = windowRect.Right - windowRect.Left;
+            int windowHeight = windowRect.Bottom - windowRect.Top;
+
+            x = Math.Max(screenBounds.Left, Math.Min(x, screenBounds.Right - windowWidth));
+            y = Math.Max(screenBounds.Top, Math.Min(y, screenBounds.Bottom - windowHeight));
+
+            NativeMethods.SetWindowPos(teamsNotificationWindowHandle, (IntPtr)NativeMethods.HWND_TOPMOST, x, y, 0, 0, NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOSIZE);
+            ProgramUtilities.SaveTeamsPosition(x, y);
+        }
+
+        private void SetSliderMaxValues()
+        {
             Screen selectedScreen = Screen.AllScreens[MonitorSelector.SelectedIndex];
             XSlider.Maximum = selectedScreen.Bounds.Width;
             YSlider.Maximum = selectedScreen.Bounds.Height;
-
-            int savedIndex = MonitorSelector.SelectedIndex;
-            MonitorSelector.Items.Clear();
-            for (int i = 0; i < Screen.AllScreens.Length; i++)
-                MonitorSelector.Items.Add(string.Format("Monitor {0}", i + 1));
-
-            MonitorSelector.SelectedIndex = savedIndex < MonitorSelector.Items.Count ? savedIndex : 0;
-            ProgramUtilities.SavePosition(XSlider.Value, YSlider.Value, MonitorSelector.SelectedIndex);
         }
-
+        
         private void PositionForm_FormClosing(object sender, FormClosingEventArgs e)
         {
             if (notificationWindowHandle != IntPtr.Zero)
+            {
                 SetClickThrough(notificationWindowHandle, false);
-        }
+                NativeMethods.SetWindowPos(notificationWindowHandle, (IntPtr)NativeMethods.HWND_TOPMOST, Screen.PrimaryScreen.Bounds.Width - 300, 100, 0, 0, NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOSIZE);
+            }
 
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-                SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
-            base.Dispose(disposing);
         }
 
         public PositionForm()
         {
+            //UI
             Text = "Notification Anywhere";
-            Size = new Size(300, 400);
+            Size = new Size(300, 450);
             MaximizeBox = false;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             ShowIcon = false;
             StartPosition = FormStartPosition.CenterScreen;
             MinimizeBox = true;
             TopMost = true;
+            ResetButton = new Button { Text = "RESET", Dock = DockStyle.Top };
 
             Label opacitySliderLabel = new Label { Text = "Opacity", TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top };
             OpacitySlider = new TrackBar { Minimum = 0, Maximum = 100, Value = 100, TickStyle = TickStyle.None, Dock = DockStyle.Top };
-            OpacitySlider.Value = ProgramUtilities.LoadOpacity();
+            Label xSliderLabel = new Label { Text = "Windows Notifications", TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top };
 
-            Label xSliderLabel = new Label { Text = "LEFT/RIGHT", TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top };
             XSlider = new TrackBar { Minimum = -500, Maximum = Screen.PrimaryScreen.Bounds.Width, TickStyle = TickStyle.None, Dock = DockStyle.Top };
-
-            Label separator1 = new Label { Dock = DockStyle.Top, Height = 5 };
-
-            Label ySliderLabel = new Label { Text = "TOP/BOTTOM", TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top };
             YSlider = new TrackBar { Minimum = -500, Maximum = Screen.PrimaryScreen.Bounds.Height, TickStyle = TickStyle.None, Dock = DockStyle.Top };
-
-            Label separator2 = new Label { Dock = DockStyle.Top, Height = 10 };
-
-            TestNotificationButton = new Button { Text = "Test Notification", Dock = DockStyle.Top };
-            Label separator3 = new Label { Dock = DockStyle.Top, Height = 10 };
 
             Label monitorSelectorLabel = new Label { Text = "Monitor", TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top };
             MonitorSelector = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top };
@@ -108,34 +166,79 @@ public class Program
             for (int i = 0; i < Screen.AllScreens.Length; i++)
                 MonitorSelector.Items.Add(string.Format("Monitor {0}", i + 1));
 
-
             MonitorSelector.SelectedIndexChanged += (sender, e) =>
             {
+                
                 if (MonitorSelector.SelectedIndex >= 0 && MonitorSelector.SelectedIndex < Screen.AllScreens.Length)
                 {
+                   
                     Screen selectedScreen = Screen.AllScreens[MonitorSelector.SelectedIndex];
                     XSlider.Maximum = selectedScreen.Bounds.Width;
                     YSlider.Maximum = selectedScreen.Bounds.Height;
                 }
             };
 
-            ClickThroughCheckBox = new CheckBox { Text = "Enable Click Through Notification", Dock = DockStyle.Top, Checked = false };
-
-            ResetButton = new Button { Text = "RESET", Dock = DockStyle.Top };
-
-            Label separator4 = new Label { Dock = DockStyle.Top, Height = 5 };
-            Label separator5 = new Label { Dock = DockStyle.Top, Height = 5 };
-
+            TestNotificationButton = new Button { Text = "Test Notification", Dock = DockStyle.Top };
             MonitorSelector.SelectedIndex = 0;
-            SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
+            int maxWidth = 0, maxHeight = 0;
+            foreach (Screen screen in Screen.AllScreens)
+            {
+                maxWidth = Math.Max(maxWidth, screen.Bounds.Width);
+                maxHeight = Math.Max(maxHeight, screen.Bounds.Height);
+            }
+
+            horizontalSlider = new TrackBar { Minimum = -500, Maximum = maxWidth, TickStyle = TickStyle.None, Dock = DockStyle.Top };
+            Label horizontalSliderLabel = new Label { Text = "Microsoft Teams", TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top };
+            verticalSlider = new TrackBar { Minimum = -500, Maximum = maxHeight, TickStyle = TickStyle.None, Dock = DockStyle.Top };
+            Label verticalSliderLabel = new Label { TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top };
+
+            Label separator6 = new Label { Dock = DockStyle.Top, Height = 5 };
+
+            verticalSlider.ValueChanged += (sender, e) =>
+            {
+                UpdateNotificationPosition(horizontalSlider.Value, verticalSlider.Value);
+            };
+            horizontalSlider.ValueChanged += (sender, e) =>
+            {
+                UpdateNotificationPosition(horizontalSlider.Value, verticalSlider.Value);
+            };
+
+            Panel separator = new Panel
+            {
+                Height = 1, 
+                Dock = DockStyle.Top,
+                BackColor = Color.Gray 
+            };
+
+            Panel separator2 = new Panel
+            {
+                Height = 1,
+                Dock = DockStyle.Top,
+                BackColor = Color.Gray 
+            };
+            Panel separator3 = new Panel
+            {
+                Height = 1, 
+                Dock = DockStyle.Top,
+                BackColor = Color.Gray 
+            };
+            Panel separator4 = new Panel
+            {
+                Height = 1, 
+                Dock = DockStyle.Top,
+                BackColor = Color.Gray 
+            };
+
+            ClickThroughCheckBox = new CheckBox { Text = "Enable Click Through Notification", Dock = DockStyle.Top, Checked = false };
             Controls.AddRange(new Control[]
             {
-                TestNotificationButton, separator2, MonitorSelector, monitorSelectorLabel, ClickThroughCheckBox,
-                separator5, OpacitySlider, opacitySliderLabel, separator3, YSlider, ySliderLabel, separator1,
-                XSlider, xSliderLabel, ResetButton, separator4
+                TestNotificationButton, separator4, MonitorSelector, monitorSelectorLabel, ClickThroughCheckBox, separator3,
+                OpacitySlider, opacitySliderLabel,separator2, verticalSlider, horizontalSlider, horizontalSliderLabel ,separator, YSlider,
+                XSlider, xSliderLabel, ResetButton, 
             });
 
+//event
             FormClosing += (sender, e) =>
             {
                 e.Cancel = true;
@@ -161,16 +264,28 @@ public class Program
             OpacitySlider.ValueChanged += (sender, e) =>
             {
                 if (notificationWindowHandle != IntPtr.Zero)
+                {
                     NativeMethods.ApplyToWindow(notificationWindowHandle, (byte)(OpacitySlider.Value * 2.55));
+                    NativeMethods.ApplyToWindow(teamsNotificationWindowHandle, (byte)(OpacitySlider.Value * 2.55));
+                    
+                }
+
+                ProgramUtilities.SaveOpacity(OpacitySlider.Value);
             };
 
-            ClickThroughCheckBox.Checked = ProgramUtilities.LoadClickThroughState();
             ClickThroughCheckBox.CheckedChanged += (sender, e) =>
             {
                 if (notificationWindowHandle != IntPtr.Zero)
                     SetClickThrough(notificationWindowHandle, ClickThroughCheckBox.Checked);
+                    SetClickThrough(teamsNotificationWindowHandle, ClickThroughCheckBox.Checked);
                 ProgramUtilities.SaveClickThroughState(ClickThroughCheckBox.Checked);
             };
+            // Initialize
+            monitorWorker = new BackgroundWorker();
+            monitorWorker.WorkerReportsProgress = true;
+            monitorWorker.DoWork += MonitorWorker_DoWork;
+            monitorWorker.ProgressChanged += MonitorWorker_ProgressChanged;
+            monitorWorker.RunWorkerAsync();
 
             FormClosing += PositionForm_FormClosing;
         }
@@ -182,6 +297,30 @@ public class Program
 
 public class NativeMethods
 {
+
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+    public const int HWND_TOPMOST = -1;
+    public const int SWP_NOACTIVATE = 0x0010;
+    public const int SW_HIDE = 0;
+    public const int SW_SHOW = 5;
+    public const int SWP_NOSIZE = 0x0001;
+    public const int SWP_NOZORDER = 0x0004;
+
     [DllImport("user32.dll")]
     public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
@@ -189,8 +328,9 @@ public class NativeMethods
     public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
     [DllImport("user32.dll")]
-    static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+    public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
+    public const int WS_EX_TRANSPARENT = 0x20;
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_LAYERED = 0x80000;
     public const int LWA_ALPHA = 0x2;
@@ -201,14 +341,7 @@ public class NativeMethods
         SetLayeredWindowAttributes(hwnd, 0, opacity, LWA_ALPHA);
     }
 
-    public const int SWP_NOSIZE = 0x0001;
-    public const int SWP_NOZORDER = 0x0004;
     public const int SWP_SHOWWINDOW = 0x0040;
-    public const int SW_HIDE = 0;
-    public const int SW_SHOW = 5;
-
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT
@@ -218,17 +351,6 @@ public class NativeMethods
         public int Right;
         public int Bottom;
     }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern bool GetWindowRect(IntPtr hwnd, out RECT lpRect);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern IntPtr FindWindowEx(
-        IntPtr parentHandle,
-        IntPtr hWndChildAfter,
-        string className,
-        string windowTitle
-    );
 
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -250,7 +372,6 @@ public class NativeMethods
 
 public class ProgramUtilities
 {
-
     public static bool IsLanguageSupported()
     {
         CultureInfo currentCulture = CultureInfo.CurrentUICulture;
@@ -323,9 +444,34 @@ public class ProgramUtilities
         }
     }
 
+    private static readonly string registryKeyPath = @"Software\NotificationAnywhere";
+    public static void SaveTeamsPosition(int horizontalValue, int verticalValue)
+    {
+        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(registryKeyPath))
+        {
+            key.SetValue("TeamsHorizontalPosition", horizontalValue);
+            key.SetValue("TeamsVerticalPosition", verticalValue);
+        }
+    }
+
+    public static void LoadTeamsPosition(out int horizontalValue, out int verticalValue)
+    {
+        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(registryKeyPath))
+        {
+            if (key == null)
+            {
+                horizontalValue = Screen.PrimaryScreen.Bounds.Width - 300;
+                verticalValue = 100;
+                return;
+            }
+            horizontalValue = (int)key.GetValue("TeamsHorizontalPosition", Screen.PrimaryScreen.Bounds.Width - 300);
+            verticalValue = (int)key.GetValue("TeamsVerticalPosition", 100);
+        }
+    }
+
     public static void SaveClickThroughState(bool enabled)
     {
-        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\NotificationAnywhere"))
+        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(registryKeyPath))
         {
             key.SetValue("ClickThroughEnabled", enabled ? 1 : 0);
         }
@@ -333,20 +479,26 @@ public class ProgramUtilities
 
     public static bool LoadClickThroughState()
     {
-        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\NotificationAnywhere"))
+        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(registryKeyPath, true))
         {
             if (key != null)
             {
                 object value = key.GetValue("ClickThroughEnabled");
-                return value != null && (int)value != 0;
+                if (value == null)
+                {
+                    key.SetValue("ClickThroughEnabled", 0);
+                    return false;
+                }
+                return (int)value != 0;
             }
             return false;
         }
     }
 
+
     public static void SaveOpacity(int value)
     {
-        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\NotificationAnywhere"))
+        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(registryKeyPath))
         {
             key.SetValue("Opacity", value);
         }
@@ -354,7 +506,7 @@ public class ProgramUtilities
 
     public static int LoadOpacity()
     {
-        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\NotificationAnywhere"))
+        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(registryKeyPath))
         {
             if (key == null)
             {
@@ -387,18 +539,17 @@ public class ProgramUtilities
             }
         }
     }
-
     public static bool IsStartupEnabled()
     {
         using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
         {
-            return key.GetValue("NotificationAnywhere") != null;
+            return key != null && key.GetValue("NotificationAnywhere") != null;
         }
     }
 
     public static void SavePosition(int x, int y, int monitorIndex)
     {
-        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\NotificationAnywhere"))
+        using (RegistryKey key = Registry.CurrentUser.CreateSubKey(registryKeyPath))
         {
             key.SetValue("PositionX", x);
             key.SetValue("PositionY", y);
@@ -408,7 +559,7 @@ public class ProgramUtilities
 
     public static void LoadPosition(out Point position, out int monitorIndex)
     {
-        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\NotificationAnywhere"))
+        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(registryKeyPath))
         {
             if (key == null)
             {
@@ -530,6 +681,16 @@ public class ProgramUtilities
                 ContextMenuStrip contextMenu = new ContextMenuStrip();
                 ToolStripMenuItem exitMenuItem = new ToolStripMenuItem("Exit");
                 ToolStripMenuItem positionNotificationMenuItem = new ToolStripMenuItem("Notification Option");
+
+                int initialHorizontalValue;
+                int initialVerticalValue;
+
+                ProgramUtilities.LoadTeamsPosition(out initialHorizontalValue, out initialVerticalValue);
+
+                positionForm.horizontalSlider.Value = initialHorizontalValue;
+                positionForm.verticalSlider.Value = initialVerticalValue;
+
+                
                 Point initialPosition;
                 int initialMonitorIndex;
                 ProgramUtilities.LoadPosition(out initialPosition, out initialMonitorIndex);
@@ -537,6 +698,10 @@ public class ProgramUtilities
                 positionForm.XSlider.Value = initialPosition.X;
                 positionForm.YSlider.Value = initialPosition.Y;
                 positionForm.MonitorSelector.SelectedIndex = initialMonitorIndex;
+
+
+                positionForm.OpacitySlider.Value = ProgramUtilities.LoadOpacity();
+                positionForm.ClickThroughCheckBox.Checked = ProgramUtilities.LoadClickThroughState();
 
                 positionForm.XSlider.ValueChanged += (sender, e) =>
                 {
@@ -713,7 +878,6 @@ public class ProgramUtilities
                                     0,
                                     NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER
                                 );
-                                NativeMethods.ApplyToWindow(hwnd, (byte)(positionForm.OpacitySlider.Value * 2.55));
                                 NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
                             }
                         }
@@ -725,16 +889,6 @@ public class ProgramUtilities
 
                         token.WaitHandle.WaitOne(1);
                     }
-                };
-
-                positionForm.OpacitySlider.ValueChanged += (sender, e) =>
-                {
-                    if (positionForm.notificationWindowHandle != IntPtr.Zero)
-                    {
-                        NativeMethods.ApplyToWindow(positionForm.notificationWindowHandle, (byte)(positionForm.OpacitySlider.Value * 2.55));
-                    }
-
-                    ProgramUtilities.SaveOpacity(positionForm.OpacitySlider.Value);
                 };
 
                 exitMenuItem.Click += (sender, e) =>
