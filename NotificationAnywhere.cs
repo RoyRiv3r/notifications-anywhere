@@ -62,7 +62,8 @@ public class Program
                         NativeMethods.GetWindowRect(hwnd, out rect);
                         int width = rect.Right - rect.Left;
                         int height = rect.Bottom - rect.Top;
-                        int[] validHeights = { 176, 252, 424, 444, 404, 520, 652, 692, 136, 272 };
+                        // there are probably more combination/size window
+                        int[] validHeights = { 176, 252, 424, 444, 404, 520, 652, 692, 136, 272, 384, 308, 556};
                         if (width == 372 && validHeights.Contains(height))
                         {
                             notificationWindowHandles.Add(hwnd);
@@ -134,8 +135,8 @@ public class Program
         {
             if (notificationWindowHandle != IntPtr.Zero)
             {
+                ResetNotificationWindowOpacity();
                 SetClickThrough(notificationWindowHandle, false);
-                NativeMethods.SetWindowPos(notificationWindowHandle, (IntPtr)NativeMethods.HWND_TOPMOST, Screen.PrimaryScreen.Bounds.Width - 300, 100, 0, 0, NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOSIZE);
             }
 
         }
@@ -880,6 +881,8 @@ public class ProgramUtilities
                                 );
                                 NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
                             }
+                        byte opacity = (byte)(positionForm.OpacitySlider.Value * 2.55);
+                        NativeMethods.ApplyToWindow(hwnd, opacity); 
                         }
                         else
                         {
@@ -896,6 +899,7 @@ public class ProgramUtilities
                     trayIcon.Visible = false;
                     cts.Cancel();
                     positionForm.ResetNotificationWindowOpacity();
+                    positionForm.SetClickThrough(positionForm.notificationWindowHandle, false);
                     Application.Exit();
                     Environment.Exit(0);
                 };
