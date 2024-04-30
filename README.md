@@ -11,7 +11,7 @@
 - **Launch on startup**: Optionally configure the application to launch automatically when Windows starts.
 - **Enable click through notification:** Lets you click on items behind a notification (low opacity recommended to see through).
 - **Fine-tune the opacity**: Adjust the transparency level of notification window for better visual preference.
-- **(New) Microsoft Teams Notification _Compatibility_ \* **: Adjust the horizontal and vertical for Microsoft Teams using sliders.
+- **(New) Microsoft Teams Notification** _Compatibility_ \*: Adjust the horizontal and vertical for Microsoft Teams using sliders.
 
 > [!Warning]
 >
@@ -52,7 +52,7 @@ Notification Anywhere runs in the background and monitors for new Windows notifi
 
 ## Installation and Usage
 
-1. Download the latest release from the [Releases](https://github.com/RoyRiv3r/notifications-anywhere/releases/tag/1.1) page.
+1. Download the latest release from the [Releases](https://github.com/RoyRiv3r/notifications-anywhere/releases/tag/1.4) page.
 2. Extract the downloaded ZIP file.
 3. Run the `NotificationAnywhere.exe` executable.
 4. Use the tray icon to access the settings and position the notifications.
