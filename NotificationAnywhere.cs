@@ -631,21 +631,18 @@ public class ProgramUtilities
         }
     }
 
-    public static void GetPositionForMonitor(
-        string notificationTitle,
-        int monitorIndex,
-        int xOffset,
-        int yOffset,
-        out int xPos,
-        out int yPos)
+    public static void GetPositionForMonitor(string notificationTitle, int monitorIndex, int xOffset, int yOffset, out int xPos, out int yPos)
     {
         xPos = 0;
         yPos = 0;
+
+        // Adjustable buffer for off-screen movement
+        int buffer = 100;
+
         Screen[] screens = Screen.AllScreens;
         if (monitorIndex >= 0 && monitorIndex < screens.Length)
         {
             Rectangle monitorBounds = screens[monitorIndex].Bounds;
-
             IntPtr hwnd = NativeMethods.FindWindow("Windows.UI.Core.CoreWindow", notificationTitle);
             if (hwnd != IntPtr.Zero)
             {
@@ -653,31 +650,19 @@ public class ProgramUtilities
                 NativeMethods.GetWindowRect(hwnd, out rect);
                 Size notificationSize = new Size(rect.Right - rect.Left, rect.Bottom - rect.Top);
 
-                bool anchorBottom = true;
-                bool anchorRight = true;
+                xPos = monitorBounds.Left + xOffset - 300;
+                xPos = Math.Max(monitorBounds.Left - 300 - buffer, Math.Min(xPos, monitorBounds.Right - notificationSize.Width + 300 + buffer));
 
-                xPos = anchorRight ? monitorBounds.Right - (monitorBounds.Width - xOffset) - notificationSize.Width : monitorBounds.Left + (monitorBounds.Width - xOffset);
-                yPos = anchorBottom ? monitorBounds.Bottom - (monitorBounds.Height - yOffset) - notificationSize.Height : monitorBounds.Top + yOffset;
-
-                if (anchorRight && xPos < monitorBounds.Left)
+                int midPoint = monitorBounds.Height / 2;
+                if (yOffset < midPoint)
                 {
-                    xPos = monitorBounds.Left;
-                    anchorRight = false;
+                    yPos = monitorBounds.Top + yOffset - buffer;
+                    yPos = Math.Max(monitorBounds.Top - buffer, yPos);
                 }
-
-                if (yPos < monitorBounds.Top)
+                else
                 {
-                    yPos = monitorBounds.Top;
-                }
-                else if (yPos + notificationSize.Height > monitorBounds.Bottom)
-                {
-                    anchorBottom = false;
-                    yPos = monitorBounds.Top + yOffset;
-
-                    if (yPos + notificationSize.Height > monitorBounds.Bottom)
-                    {
-                        yPos = monitorBounds.Top + (monitorBounds.Height - notificationSize.Height) / 2;
-                    }
+                    yPos = monitorBounds.Bottom - (monitorBounds.Height - yOffset) - notificationSize.Height + buffer;
+                    yPos = Math.Min(monitorBounds.Bottom - notificationSize.Height + buffer, yPos);
                 }
             }
         }
